@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChainLottery — Provably Fair On-Chain Lottery</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<style>
+  :root { --bg: #070710; --panel: #11111d; --line: #23233a; --text: #ecebf7; --muted: #8a89a6; --gold: #ffcc4d; --gold2: #ff8a3d; --violet: #8b6bff; --green: #3ee08f; --red: #ff6b6b; }
+  * { box-sizing: border-box; } [hidden] { display: none !important; }
+  body { margin: 0; min-height: 100vh; color: var(--text); font: 14px/1.5 -apple-system, "Segoe UI", Inter, sans-serif;
+         background: radial-gradient(900px 500px at 50% -15%, #2a1d52 0%, transparent 60%), radial-gradient(600px 400px at 100% 100%, #2b1a0a 0%, transparent 60%), var(--bg); }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .logo { font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+  .logo span { background: linear-gradient(90deg, var(--gold), var(--gold2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.ok { color: var(--green); border-color: #3ee08f55; }
+  .spacer { flex: 1; }
+  select, button, input { font: inherit; color: var(--text); }
+  select, input { background: #0c0c16; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  button { background: #1a1a2b; border: 1px solid var(--line); border-radius: 10px; padding: 9px 16px; cursor: pointer; transition: .15s; font-weight: 600; }
+  button:hover:not(:disabled) { border-color: var(--gold); } button:disabled { opacity: .45; cursor: default; }
+  .primary { background: linear-gradient(90deg, var(--gold), var(--gold2)); color: #1a1000; border: 0; box-shadow: 0 6px 24px #ff9b3d44; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 60px; display: grid; gap: 18px; grid-template-columns: repeat(12, 1fr); }
+  .card { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  h2 { margin: 0 0 14px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .hero { grid-column: span 12; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 30px; }
+  .jackpot-label { color: var(--muted); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; }
+  .jackpot { font-size: clamp(42px, 8vw, 76px); font-weight: 900; letter-spacing: -.03em; line-height: 1.05;
+             background: linear-gradient(90deg, var(--gold), var(--gold2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .jackpot small { font-size: .4em; }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .pill { padding: 4px 12px; border-radius: 99px; background: #1a1a2b; font-size: 13px; color: #cfcde6; }
+  .pill.open { color: var(--green); } .pill.drawing { color: var(--gold); animation: pulse 1.2s infinite; }
+  .ring { position: relative; width: 170px; height: 170px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .time { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 800; font-size: 28px; }
+  .ring .time small { display: block; font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .08em; }
+  .buy { grid-column: span 5; } .me { grid-column: span 3; } .players { grid-column: span 4; }
+  .winners { grid-column: span 7; } .feed { grid-column: span 5; } .dev { grid-column: span 12; }
+  @media (max-width: 900px) { .buy, .me, .players, .winners, .feed { grid-column: span 12; } .hero { grid-template-columns: 1fr; } }
+  .stepper { display: flex; align-items: center; gap: 8px; margin: 6px 0 12px; }
+  .stepper input { width: 90px; text-align: center; font-size: 22px; font-weight: 800; }
+  .stepper button { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+  .quick { display: flex; gap: 6px; margin-bottom: 14px; } .quick button { flex: 1; padding: 6px; font-size: 12px; }
+  .cost { display: flex; justify-content: space-between; color: var(--muted); margin-bottom: 14px; } .cost b { color: var(--text); font-size: 18px; }
+  .buy .primary { width: 100%; padding: 13px; font-size: 16px; }
+  .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .stat:last-of-type { border: 0; } .stat span { color: var(--muted); } .stat b { font-size: 16px; }
+  .me .primary { width: 100%; margin-top: 12px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; }
+  .row:last-child { border: 0; }
+  .addr { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .bar { grid-column: span 2; height: 6px; border-radius: 3px; background: #1a1a2b; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--gold)); }
+  .you { color: var(--gold); font-weight: 700; }
+  .list { max-height: 300px; overflow-y: auto; }
+  .empty { color: var(--muted); padding: 14px 0; }
+  .win { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .win .trophy { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: #2a2210; font-size: 18px; }
+  .win .prize { color: var(--gold); font-weight: 800; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .dev { border-style: dashed; } .dev .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .toast { position: fixed; bottom: 22px; right: 22px; background: #1a1a2b; border: 1px solid var(--line); border-left: 4px solid var(--gold); padding: 12px 16px; border-radius: 12px; max-width: 360px; box-shadow: 0 10px 30px #0008; animation: in .2s; z-index: 10; }
+  .toast.err { border-left-color: var(--red); } .toast.ok { border-left-color: var(--green); }
+  .confetti { position: fixed; top: -10px; width: 9px; height: 14px; z-index: 20; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(105vh) rotate(720deg); } }
+  @keyframes pulse { 50% { opacity: .5; } } @keyframes in { from { opacity: 0; transform: translateY(8px); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🎟️ Chain<span>Lottery</span></div>
+  <span class="badge" id="net">connecting…</span>
+  <span class="badge">🔗 Chainlink VRF</span>
+  <div class="spacer"></div>
+  <select id="account" hidden></select>
+  <button id="connect" hidden>Connect wallet</button>
+</header>
+
+<main>
+  <section class="card hero">
+    <div>
+      <div class="jackpot-label">Current jackpot · Round <span id="round">—</span></div>
+      <div class="jackpot" id="jackpot">0 <small>ETH</small></div>
+      <div class="meta">
+        <span class="pill" id="state">—</span>
+        <span class="pill">🎫 <b id="sold">0</b> tickets sold</span>
+        <span class="pill">👥 <b id="pcount">0</b> players</span>
+        <span class="pill">💵 <b id="price">—</b> ETH / ticket</span>
+        <span class="pill">🏦 fee <b id="fee">—</b></span>
+      </div>
+    </div>
+    <div class="ring">
+      <svg width="170" height="170"><circle cx="85" cy="85" r="76" stroke="#1f1f33" stroke-width="10" fill="none"/>
+        <circle id="arc" cx="85" cy="85" r="76" stroke="url(#g)" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="477.5" stroke-dashoffset="0"/>
+        <defs><linearGradient id="g"><stop offset="0" stop-color="#ffcc4d"/><stop offset="1" stop-color="#ff8a3d"/></linearGradient></defs></svg>
+      <div class="time"><div><span id="countdown">--:--</span><small id="countlabel">UNTIL DRAW</small></div></div>
+    </div>
+  </section>
+
+  <section class="card buy">
+    <h2>Buy tickets</h2>
+    <div class="stepper"><button id="minus">−</button><input id="qty" type="number" min="1" max="100" value="1"><button id="plus">+</button></div>
+    <div class="quick"><button data-q="1">1</button><button data-q="5">5</button><button data-q="10">10</button><button data-q="25">25</button><button data-q="100">100</button></div>
+    <div class="cost"><span>Total cost</span><b id="cost">—</b></div>
+    <button class="primary" id="buy">🎟️ Buy tickets</button>
+  </section>
+
+  <section class="card me">
+    <h2>You</h2>
+    <div class="stat"><span>Your tickets</span><b id="mytickets">0</b></div>
+    <div class="stat"><span>Win chance</span><b id="chance">0%</b></div>
+    <div class="stat"><span>Claimable</span><b id="claimable">0 ETH</b></div>
+    <button class="primary" id="withdraw" disabled>💰 Withdraw winnings</button>
+  </section>
+
+  <section class="card players">
+    <h2>Players this round</h2>
+    <div class="list" id="players"><div class="empty">No tickets yet — be the first!</div></div>
+  </section>
+
+  <section class="card winners">
+    <h2>🏆 Past winners</h2>
+    <div class="list" id="winners"><div class="empty">No draws yet.</div></div>
+  </section>
+
+  <section class="card feed">
+    <h2>Live activity</h2>
+    <div class="list" id="feed"><div class="empty">Waiting for activity…</div></div>
+  </section>
+
+  <section class="card dev" id="dev" hidden>
+    <h2>🛠 Local dev controls <span class="muted">(anvil only — simulates the passage of time, Chainlink Automation and Chainlink VRF)</span></h2>
+    <div class="actions">
+      <button id="warp">⏩ Fast-forward 5 min</button>
+      <button id="upkeep">🔒 Close round (performUpkeep)</button>
+      <button id="vrf">⚡ Deliver Chainlink VRF randomness</button>
+      <span class="muted" id="devinfo"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+const { ethers } = window;
+const $ = (s) => document.querySelector(s);
+const STATES = ["Open", "Drawing", "Settled", "Refunded"];
+// Anvil's well-known, publicly documented test keys (local development only — never hold real funds).
+const ANVIL_KEYS = [
+  "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+  "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+  "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a",
+];
+const MOCK_ABI = ["function fulfillRandomWords(uint256 requestId, address consumer)"];
+const S = { cfg: null, local: false, provider: null, signer: null, me: null, lottery: null, round: null, roundId: 0n, chainOffset: 0, seen: new Set(), lastWinnerRound: 0n };
+
+const short = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+const eth = (wei, d = 4) => (+ethers.formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: d });
+function toast(msg, kind = "") {
+  const t = document.createElement("div"); t.className = "toast " + kind; t.textContent = msg; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4200);
+}
+function confetti() {
+  const colors = ["#ffcc4d", "#ff8a3d", "#8b6bff", "#3ee08f", "#ff5cc8"];
+  for (let i = 0; i < 120; i++) {
+    const c = document.createElement("div"); c.className = "confetti";
+    c.style.left = Math.random() * 100 + "vw"; c.style.background = colors[i % colors.length];
+    c.style.animationDuration = 2 + Math.random() * 2 + "s"; c.style.animationDelay = Math.random() * .6 + "s";
+    document.body.appendChild(c); setTimeout(() => c.remove(), 5000);
+  }
+}
+function niceError(e) {
+  const name = e?.revert?.name || e?.info?.error?.message || e?.shortMessage || e?.message || String(e);
+  const map = { RoundEnded: "This round has ended — close it to start the draw.", RoundNotOpen: "Round is drawing — wait for the next one.",
+                LotteryPaused: "Ticket sales are paused.", NothingToClaim: "Nothing to claim.", RoundStillRunning: "Round hasn't ended yet." };
+  return map[name] || name;
+}
+async function send(label, fn) {
+  try {
+    toast(`⏳ ${label}…`);
+    const tx = await fn(); const rc = await tx.wait();
+    toast(`✅ ${label} confirmed (block ${rc.blockNumber})`, "ok"); await refresh(); return rc;
+  } catch (e) { toast("❌ " + niceError(e), "err"); }
+}
+
+// ------------------------------------------------------------ boot
+async function boot() {
+  try {
+    S.cfg = await (await fetch("config.json", { cache: "no-store" })).json();
+    var abi = await (await fetch("abi.json", { cache: "no-store" })).json();
+  } catch { $("#net").textContent = "not deployed — run ./demo.sh"; return; }
+  S.local = Number(S.cfg.chainId) === 31337;
+  if (S.local) {
+    S.provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+    $("#account").hidden = false; $("#dev").hidden = false;
+    $("#account").innerHTML = ANVIL_KEYS.map((k, i) => `<option value="${i}">Player ${i + 1} · ${short(new ethers.Wallet(k).address)}</option>`).join("");
+    $("#account").onchange = () => useLocal(+$("#account").value);
+    useLocal(0);
+    await syncClock();
+  } else {
+    if (!window.ethereum) { $("#net").textContent = "install MetaMask"; return; }
+    S.provider = new ethers.BrowserProvider(window.ethereum);
+    $("#connect").hidden = false;
+    $("#connect").onclick = async () => { S.signer = await S.provider.getSigner(); S.me = await S.signer.getAddress(); $("#connect").textContent = short(S.me); bind(abi); refresh(); };
+  }
+  const net = await S.provider.getNetwork();
+  $("#net").textContent = S.local ? "● Local anvil (31337)" : `● ${net.name} (${net.chainId})`; $("#net").classList.add("ok");
+  S.abi = abi; bind(abi);
+  await refresh(); setInterval(refresh, 3000); setInterval(tickClock, 250);
+}
+function useLocal(i) { S.signer = new ethers.Wallet(ANVIL_KEYS[i], S.provider); S.me = S.signer.address; if (S.abi) bind(S.abi); refresh(); }
+function bind(abi) { S.lottery = new ethers.Contract(S.cfg.lottery, abi, S.signer || S.provider); }
+async function syncClock() {
+  if (S.local) await S.provider.send("evm_mine", []);
+  const b = await S.provider.getBlock("latest"); S.chainOffset = b.timestamp - Date.now() / 1000;
+}
+const chainNow = () => Date.now() / 1000 + S.chainOffset;
+
+// ------------------------------------------------------------ state
+async function refresh() {
+  if (!S.lottery) return;
+  const L = S.lottery;
+  const [roundId, round] = await Promise.all([L.currentRoundId(), L.currentRound()]);
+  S.roundId = roundId; S.round = round;
+  const pot = round.pot, fee = Number(round.feeBps);
+  $("#round").textContent = roundId;
+  $("#jackpot").innerHTML = `${eth(pot - (pot * BigInt(fee)) / 10000n)} <small>ETH</small>`;
+  $("#sold").textContent = round.totalTickets; $("#pcount").textContent = round.playerCount;
+  $("#price").textContent = eth(round.ticketPrice); $("#fee").textContent = fee / 100 + "%";
+  const st = STATES[Number(round.state)];
+  $("#state").textContent = st === "Drawing" ? "🎲 Drawing winner…" : st === "Open" ? "● Open" : st;
+  $("#state").className = "pill " + st.toLowerCase();
+  updateCost();
+
+  if (S.me) {
+    const [mine, chance, owed] = await Promise.all([L.ticketsOf(roundId, S.me), L.winChanceBps(S.me), L.pendingWithdrawals(S.me)]);
+    $("#mytickets").textContent = mine; $("#chance").textContent = (Number(chance) / 100).toFixed(2) + "%";
+    $("#claimable").textContent = eth(owed) + " ETH"; $("#withdraw").disabled = owed === 0n;
+  }
+  await Promise.all([renderPlayers(roundId, round), renderEvents()]);
+  if (S.local) $("#devinfo").textContent = st === "Drawing" ? `VRF request #${round.requestId.toString().slice(0, 10)}… pending` : "";
+  tickClock();
+}
+async function renderPlayers(roundId, round) {
+  const n = Number(await S.lottery.entryCount(roundId));
+  const entries = n ? await S.lottery.getEntries(roundId, 0, Math.min(n, 500)) : [];
+  const totals = new Map(); let prev = 0n;
+  for (const e of entries) { totals.set(e.player, (totals.get(e.player) || 0n) + (e.cumulativeTickets - prev)); prev = e.cumulativeTickets; }
+  const total = Number(round.totalTickets) || 1;
+  const rows = [...totals].sort((a, b) => Number(b[1] - a[1]));
+  $("#players").innerHTML = rows.length ? rows.map(([p, t]) => `
+    <div class="row"><span class="addr ${p === S.me ? "you" : ""}">${short(p)}${p === S.me ? " (you)" : ""}</span><b>${t} 🎫</b>
+      <div class="bar"><i style="width:${(Number(t) / total) * 100}%"></i></div></div>`).join("") : '<div class="empty">No tickets yet — be the first!</div>';
+}
+async function renderEvents() {
+  const L = S.lottery;
+  const from = S.local ? 0 : Math.max(0, (await S.provider.getBlockNumber()) - 5000);
+  const [wins, buys] = await Promise.all([L.queryFilter(L.filters.WinnerPicked(), from), L.queryFilter(L.filters.TicketsPurchased(), from)]);
+  $("#winners").innerHTML = wins.length ? wins.slice().reverse().slice(0, 15).map((w) => `
+    <div class="win"><div class="trophy">🏆</div><div><div class="addr ${w.args.winner === S.me ? "you" : ""}">${short(w.args.winner)}${w.args.winner === S.me ? " (you!)" : ""}</div>
+      <div class="muted">Round ${w.args.roundId} · winning ticket #${w.args.winningTicket} · tx ${short(w.transactionHash)}</div></div>
+      <div class="prize">+${eth(w.args.prize)} ETH</div></div>`).join("") : '<div class="empty">No draws yet.</div>';
+  const latest = wins.at(-1);
+  if (latest && latest.args.roundId > S.lastWinnerRound) {
+    if (S.lastWinnerRound !== 0n || S.seen.size) { toast(`🏆 Round ${latest.args.roundId} winner: ${short(latest.args.winner)} won ${eth(latest.args.prize)} ETH!`, "ok"); confetti(); }
+    S.lastWinnerRound = latest.args.roundId;
+  }
+  const feed = [...buys.map((b) => ({ k: b.transactionHash + b.index, html: `🎫 <span class="addr">${short(b.args.player)}</span> bought <b>${b.args.tickets}</b> ticket${b.args.tickets > 1n ? "s" : ""} <span class="muted">· round ${b.args.roundId}</span>`, n: b.blockNumber })),
+                ...wins.map((w) => ({ k: w.transactionHash, html: `🏆 <span class="addr">${short(w.args.winner)}</span> won <b>${eth(w.args.prize)} ETH</b> <span class="muted">· round ${w.args.roundId}</span>`, n: w.blockNumber }))]
+    .sort((a, b) => b.n - a.n).slice(0, 25);
+  feed.forEach((f) => S.seen.add(f.k));
+  $("#feed").innerHTML = feed.length ? feed.map((f) => `<div class="row"><span>${f.html}</span><span class="muted">#${f.n}</span></div>`).join("") : '<div class="empty">Waiting for activity…</div>';
+}
+function tickClock() {
+  const r = S.round; if (!r) return;
+  const st = STATES[Number(r.state)];
+  const total = Number(r.endTime - r.startTime) || 1, left = Math.max(0, Number(r.endTime) - chainNow());
+  const m = Math.floor(left / 60), s = Math.floor(left % 60);
+  $("#countdown").textContent = st === "Drawing" ? "🎲" : left > 3600 ? `${Math.floor(left / 3600)}h ${Math.floor((left % 3600) / 60)}m` : `${m}:${String(s).padStart(2, "0")}`;
+  $("#countlabel").textContent = st === "Drawing" ? "AWAITING VRF" : left === 0 ? "READY TO DRAW" : "UNTIL DRAW";
+  $("#arc").style.strokeDashoffset = 477.5 * (1 - left / total);
+  $("#buy").disabled = st !== "Open" || left === 0 || !S.signer;
+}
+function updateCost() {
+  const q = Math.max(1, Math.min(100, +$("#qty").value || 1));
+  if (S.round) $("#cost").textContent = eth(S.round.ticketPrice * BigInt(q), 6) + " ETH";
+}
+
+// ------------------------------------------------------------ actions
+$("#qty").oninput = updateCost;
+$("#minus").onclick = () => { $("#qty").value = Math.max(1, +$("#qty").value - 1); updateCost(); };
+$("#plus").onclick = () => { $("#qty").value = Math.min(100, +$("#qty").value + 1); updateCost(); };
+document.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { $("#qty").value = b.dataset.q; updateCost(); }));
+$("#buy").onclick = () => {
+  const q = BigInt(Math.max(1, Math.min(100, +$("#qty").value || 1)));
+  send(`Buying ${q} ticket(s)`, () => S.lottery.enter(q, { value: S.round.ticketPrice * q }));
+};
+$("#withdraw").onclick = () => send("Withdrawing winnings", () => S.lottery.withdraw());
+$("#warp").onclick = async () => { await S.provider.send("evm_increaseTime", [300]); await syncClock(); toast("⏩ Time moved forward 5 minutes"); refresh(); };
+$("#upkeep").onclick = () => send("Closing round", () => S.lottery.performUpkeep("0x"));
+$("#vrf").onclick = () => {
+  if (STATES[Number(S.round.state)] !== "Drawing") return toast("Close the round first — no VRF request is pending.", "err");
+  const mock = new ethers.Contract(S.cfg.vrfCoordinator, MOCK_ABI, S.signer);
+  send("Delivering VRF randomness", () => mock.fulfillRandomWords(S.round.requestId, S.cfg.lottery, { gasLimit: 2_000_000 }));
+};
+boot();
+</script>
+</body>
+</html>
